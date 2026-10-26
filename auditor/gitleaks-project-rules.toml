@@ -1,0 +1,40 @@
+# Project rules for the EV_PNC / EV_PnC_Consent repositories.
+# ci-auditor.yml appends this file to a generated config that extends the repo's own
+# .gitleaks.toml (which extends the gitleaks defaults), so repo allowlists still apply.
+# Rules are keyword-gated on purpose: the docs repos discuss these data types a lot.
+
+[[rules]]
+id = "tr-national-id"
+description = "Turkish national ID number (TCKN) next to an identifying keyword (personal data under KVKK)"
+regex = '''(?i)(?:tckn|tc[_ .-]?kimlik(?:[_ .-]?no)?|national[_ -]?id)["'\s:=]{1,6}([1-9][0-9]{10})\b'''
+secretGroup = 1
+keywords = ["tckn", "kimlik", "national"]
+
+[[rules]]
+id = "payment-card-pan"
+description = "Payment card number next to a card keyword (PCI-DSS); well-known test PANs are allowed"
+regex = '''(?i)(?:card|pan|cc)[_ .-]?(?:number|no|num)?["'\s:=]{1,6}(4[0-9]{15}|5[1-5][0-9]{14}|2[2-7][0-9]{14}|3[47][0-9]{13}|9792[0-9]{12})\b'''
+secretGroup = 1
+keywords = ["card", "pan", "cc"]
+[[rules.allowlists]]
+description = "Published scheme test card numbers"
+regexTarget = "match"
+regexes = ['''(?:4111111111111111|4242424242424242|4012888888881881|5555555555554444|5105105105105100|2223003122003222|378282246310005|371449635398431|9792000000000000)''']
+
+[[rules]]
+id = "ocpi-authorization-token"
+description = "OCPI credentials token sent as `Authorization: Token <value>`"
+regex = '''(?i)authorization["'\s:=]{1,6}token\s+([A-Za-z0-9+/=_-]{20,})'''
+secretGroup = 1
+keywords = ["authorization"]
+[[rules.allowlists]]
+description = "Documentation placeholders"
+regexTarget = "match"
+regexes = ['''(?i)token\s+(?:<[^>]+>|\$\{?[A-Za-z_]+\}?|x{8,}|your[_-]?token[_a-z-]*|example[_a-z0-9-]*)''']
+
+[[rules]]
+id = "kafka-jaas-password"
+description = "Kafka SASL JAAS configuration with an inline password"
+regex = '''(?i)sasl\.jaas\.config[^\n]{0,200}?password\s*=\s*["']([^"'\s]{8,})["']'''
+secretGroup = 1
+keywords = ["sasl.jaas.config"]

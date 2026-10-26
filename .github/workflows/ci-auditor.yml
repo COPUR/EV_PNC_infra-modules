@@ -1,0 +1,136 @@
+name: ci-auditor
+
+# Reusable CI/CD auditor for the EV_PNC and EV_PnC_Consent repositories.
+# Callers: see auditor/templates/auditor-caller.yml. Docs: auditor/README.md.
+on:
+  workflow_call:
+    inputs:
+      public:
+        description: Repository is public (public repositories must carry a LICENSE)
+        type: boolean
+        default: true
+      strict-pinning:
+        description: Fail (instead of warn) on actions not pinned to a full commit SHA
+        type: boolean
+        default: false
+      max-file-mb:
+        description: Largest tracked file allowed, in MiB
+        type: number
+        default: 5
+      auditor-ref:
+        description: Ref of COPUR/EV_PNC_infra-modules that holds the auditor scripts
+        type: string
+        default: v1
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the repository (full history)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the auditor scripts
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: COPUR/EV_PNC_infra-modules
+          ref: ${{ inputs.auditor-ref }}
+          path: .auditor-src
+          persist-credentials: false
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install gitleaks (version pinned, module checksums verified by the Go sumdb)
+        run: |
+          GOBIN="$RUNNER_TEMP/bin" go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          echo "GITLEAKS_BIN=$RUNNER_TEMP/bin/gitleaks" >> "$GITHUB_ENV"
+
+      - name: Scan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          # pull_request: only the PR's commits. push: only the pushed range. Anything else
+          # (schedule, dispatch, new branch, unreachable `before`): full history.
+          GITLEAKS_LOG_OPTS=""
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            GITLEAKS_LOG_OPTS="${PR_BASE}..${PR_HEAD}"
+          elif [ "$EVENT_NAME" = "push" ] && [ "${PUSH_BEFORE#0000000}" != "$PUSH_BEFORE" ]; then
+            GITLEAKS_LOG_OPTS=""
+          elif [ "$EVENT_NAME" = "push" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            GITLEAKS_LOG_OPTS="${PUSH_BEFORE}..${PUSH_AFTER}"
+          fi
+          export GITLEAKS_LOG_OPTS
+          echo "gitleaks range: ${GITLEAKS_LOG_OPTS:-<full history>}"
+          bash .auditor-src/auditor/run-gitleaks.sh
+
+      - name: Upload redacted report
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  audit:
+    name: repository audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Check out the auditor scripts
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: COPUR/EV_PNC_infra-modules
+          ref: ${{ inputs.auditor-ref }}
+          path: .auditor-src
+          persist-credentials: false
+
+      - name: Repository and workflow hygiene
+        env:
+          PUBLIC: ${{ inputs.public }}
+          STRICT_PINNING: ${{ inputs.strict-pinning }}
+          MAX_FILE_MB: ${{ inputs.max-file-mb }}
+        run: |
+          python3 .auditor-src/auditor/audit.py \
+            --public "$PUBLIC" --strict-pinning "$STRICT_PINNING" \
+            --max-file-mb "$MAX_FILE_MB" --json "$RUNNER_TEMP/auditor-report.json"
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        if: always() && hashFiles('.github/workflows/*.yml', '.github/workflows/*.yaml') != ''
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Lint workflows (actionlint)
+        if: always() && hashFiles('.github/workflows/*.yml', '.github/workflows/*.yaml') != ''
+        run: |
+          GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$RUNNER_TEMP/bin/actionlint" -color
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: auditor-report
+          path: ${{ runner.temp }}/auditor-report.json
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+gitleaks-report.json
+auditor-report.json
+.env
+.env.*
+!.env.example
+*.tfstate
+*.tfstate.*
+.terraform/

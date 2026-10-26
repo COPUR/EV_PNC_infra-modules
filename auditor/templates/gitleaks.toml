@@ -1,0 +1,12 @@
+# Repository gitleaks config. The default rule set is always on; the EV_PNC project rules
+# (TCKN, card PAN, OCPI token, Kafka JAAS password) are added by the shared auditor workflow in
+# COPUR/EV_PNC_infra-modules, so do not copy them here.
+title = "EV_PNC gitleaks config"
+
+[extend]
+useDefault = true
+
+# Add reviewed false positives below, narrowly (a path AND/OR a regex), with a reason.
+# [[allowlists]]
+# description = "why this is safe"
+# paths = ['''docs/examples/sample-token\.md''']
