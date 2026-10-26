@@ -23,13 +23,15 @@ OCPI `Authorization: Token ...`, Kafka SASL JAAS password.
 ## Adding it to a repository
 
 Copy `templates/gitleaks.toml` to `.gitleaks.toml` and `templates/auditor-caller.yml` to `.github/workflows/auditor.yml`
-(set `public: true|false`). Reviewed false positives go into the repository's own `.gitleaks.toml` as a narrow
+(replace `__PUBLIC__` with `true` or `false`, and `__HUB_SHA__` with the commit of this repository to pin, in both places). Reviewed false positives go into the repository's own `.gitleaks.toml` as a narrow
 `[[allowlists]]` (path and/or regex, with a reason). Path-based audit findings are silenced with glob lines in
 `.auditor-allow`. Both files are reviewed in the PR like any other change.
 
 ## Versioning
 
-Callers pin `@v1`, a moving major tag in this repository (move it only for backwards-compatible changes).
+Callers pin this repository by full commit SHA, in `uses:` and in `auditor-ref:` (the same commit; the first picks the
+workflow file, the second the scripts it runs). To roll out a change, merge it here and bump the pin in each caller.
+A moving `v1` tag would let callers drop `auditor-ref`; tags cannot be pushed from the agent environment, so that is a manual step.
 Gitleaks (`v8.30.1`) and actionlint (`v1.7.12`) are built with `go install` at a pinned version, so the module
 checksums are verified by the Go sumdb. Third-party actions are pinned to full SHAs.
 

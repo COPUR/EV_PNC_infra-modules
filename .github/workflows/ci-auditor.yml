@@ -18,9 +18,9 @@ on:
         type: number
         default: 5
       auditor-ref:
-        description: Ref of COPUR/EV_PNC_infra-modules that holds the auditor scripts
+        description: Ref of COPUR/EV_PNC_infra-modules that holds the auditor scripts; callers pass the same SHA they pin in `uses:`
         type: string
-        default: v1
+        default: main
 
 permissions:
   contents: read
