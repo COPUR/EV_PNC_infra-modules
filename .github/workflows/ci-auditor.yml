@@ -63,15 +63,17 @@ jobs:
           PUSH_BEFORE: ${{ github.event.before }}
           PUSH_AFTER: ${{ github.sha }}
         run: |
-          # pull_request: only the PR's commits. push: only the pushed range. Anything else
-          # (schedule, dispatch, new branch, unreachable `before`): full history.
+          # pull_request: only the PR's commits. push: the pushed range, or this branch's own
+          # history when the branch is new. schedule / dispatch: every branch (gitleaks default).
           GITLEAKS_LOG_OPTS=""
           if [ "$EVENT_NAME" = "pull_request" ]; then
             GITLEAKS_LOG_OPTS="${PR_BASE}..${PR_HEAD}"
-          elif [ "$EVENT_NAME" = "push" ] && [ "${PUSH_BEFORE#0000000}" != "$PUSH_BEFORE" ]; then
-            GITLEAKS_LOG_OPTS=""
-          elif [ "$EVENT_NAME" = "push" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
-            GITLEAKS_LOG_OPTS="${PUSH_BEFORE}..${PUSH_AFTER}"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            if git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+              GITLEAKS_LOG_OPTS="${PUSH_BEFORE}..${PUSH_AFTER}"
+            else
+              GITLEAKS_LOG_OPTS="${PUSH_AFTER}"
+            fi
           fi
           export GITLEAKS_LOG_OPTS
           echo "gitleaks range: ${GITLEAKS_LOG_OPTS:-<full history>}"

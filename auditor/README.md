@@ -8,7 +8,7 @@ Repositories call it with the three-line caller in `templates/auditor-caller.yml
 
 | Job | Check | Fails the build |
 |---|---|---|
-| `gitleaks` | Default gitleaks rules + project rules (`gitleaks-project-rules.toml`) on the pushed range, the PR's commits, or the full history (schedule, dispatch, new branch). Reports are redacted. | any finding |
+| `gitleaks` | Default gitleaks rules + project rules (`gitleaks-project-rules.toml`) on the pushed range, the PR's commits, the branch's own history (first push of a branch), or every branch (schedule, dispatch). Reports are redacted. | any finding |
 | `repository audit` | `README.md`, `LICENSE` (public repos), `.gitleaks.toml` present; `CODEOWNERS`, `.gitignore` (warning) | missing required file |
 | | `.gitleaks.toml` keeps the default rules on and has no repo-wide `.*` allowlist | yes |
 | | Committed `.env`, `*.tfstate`, `*.tfvars`, keystores (`.p12 .pfx .jks`), SSH keys, kubeconfig, service-account JSON, `.pem`/`.key` holding a private key | yes |
