@@ -1,0 +1,85 @@
+name: ci-approver
+
+# Reusable approval gate for the EV_PNC and EV_PnC_Consent repositories: the second gate after
+# ci-auditor. Decides from the pull request's metadata and diff (read through the API; the PR's
+# code is never checked out) whether it may merge without a human, publishes the verdict as the
+# `ci-approver` commit status and, on approve, merges. Policy: auditor/approve.py, auditor/README.md.
+# Callers: see auditor/templates/auditor-caller.yml. The calling job must grant the permissions below.
+on:
+  workflow_call:
+    inputs:
+      merge:
+        description: Merge when approved (false = only publish the verdict)
+        type: boolean
+        default: true
+      merge-method:
+        description: merge, squash or rebase
+        type: string
+        default: squash
+      trusted-authors:
+        description: Space or comma separated logins whose pull requests may be merged automatically
+        type: string
+        default: COPUR
+      wait-minutes:
+        description: How long to wait for other checks to finish (capped at 20)
+        type: number
+        default: 15
+      max-files:
+        type: number
+        default: 100
+      max-lines:
+        type: number
+        default: 3000
+      extra-sensitive-paths:
+        description: Extra path globs that always need a human (added to the built-in list)
+        type: string
+        default: ""
+      approver-ref:
+        description: Ref of COPUR/EV_PNC_infra-modules that holds the approver script; callers pass the SHA they pin in `uses:`
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    name: ci-approver
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # merge
+      pull-requests: write # merge
+      statuses: write # publish the verdict
+      checks: read # read the other checks on the head commit
+    steps:
+      - name: Check out the approver script (this hub, never the pull request)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: COPUR/EV_PNC_infra-modules
+          ref: ${{ inputs.approver-ref }}
+          path: .approver-src
+          persist-credentials: false
+
+      - name: Decide and merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MERGE: ${{ inputs.merge }}
+          MERGE_METHOD: ${{ inputs.merge-method }}
+          TRUSTED: ${{ inputs.trusted-authors }}
+          WAIT: ${{ inputs.wait-minutes }}
+          MAX_FILES: ${{ inputs.max-files }}
+          MAX_LINES: ${{ inputs.max-lines }}
+          EXTRA: ${{ inputs.extra-sensitive-paths }}
+        run: |
+          python3 .approver-src/auditor/approve.py \
+            --repo "$REPO" --pr "$PR" --sha "$HEAD_SHA" --run-id "$RUN_ID" --target-url "$RUN_URL" \
+            --merge "$MERGE" --merge-method "$MERGE_METHOD" --trusted-authors "$TRUSTED" \
+            --wait-minutes "$WAIT" --max-files "$MAX_FILES" --max-lines "$MAX_LINES" \
+            --extra-sensitive "$EXTRA"
