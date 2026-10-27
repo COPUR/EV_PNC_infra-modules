@@ -38,6 +38,11 @@ Sensitive paths (always a human): `.github/workflows/*`, `.github/actions/*`, `C
 `.gitleaks.toml`, `.auditor-allow`, `auditor/*`, `*.tf`, `*.tfvars`, `*Dockerfile*`, plus the caller's `extra-sensitive-paths`.
 They are the control plane: a PR that edits CI or the secret scanner cannot approve itself.
 
+**Content review.** The approver judges metadata and patterns, not what the change says. The CI review agent
+(`reviewer/`, check `review / verdict`) reads the diff with Claude and approves or requests changes. Pass
+`required-checks: "review / verdict"` (the caller template does) so the approver waits until that check has reported and
+passed; without it, a review that has not started yet could be missed. Together: the reviewer approves, the approver merges.
+
 GitHub does not let a PR author approve their own PR, and these PRs are authored by the repository owner, so the approval is a
 status check, not a review. The caller job grants `contents: write`, `pull-requests: write`, `statuses: write`, `checks: read`.
 

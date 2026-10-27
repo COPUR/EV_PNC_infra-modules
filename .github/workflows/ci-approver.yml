@@ -34,6 +34,10 @@ on:
         description: Extra path globs that always need a human (added to the built-in list)
         type: string
         default: ""
+      required-checks:
+        description: Comma separated check names that must report and pass before merging, e.g. 'review / verdict' (the CI review agent)
+        type: string
+        default: ""
       approver-ref:
         description: Ref of COPUR/EV_PNC_infra-modules that holds the approver script; callers pass the SHA they pin in `uses:`
         type: string
@@ -77,9 +81,10 @@ jobs:
           MAX_FILES: ${{ inputs.max-files }}
           MAX_LINES: ${{ inputs.max-lines }}
           EXTRA: ${{ inputs.extra-sensitive-paths }}
+          REQUIRED: ${{ inputs.required-checks }}
         run: |
           python3 .approver-src/auditor/approve.py \
             --repo "$REPO" --pr "$PR" --sha "$HEAD_SHA" --run-id "$RUN_ID" --target-url "$RUN_URL" \
             --merge "$MERGE" --merge-method "$MERGE_METHOD" --trusted-authors "$TRUSTED" \
             --wait-minutes "$WAIT" --max-files "$MAX_FILES" --max-lines "$MAX_LINES" \
-            --extra-sensitive "$EXTRA"
+            --extra-sensitive "$EXTRA" --required-checks "$REQUIRED"

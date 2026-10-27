@@ -52,6 +52,7 @@ class Policy:
     max_lines: int = 3000
     sensitive: tuple[str, ...] = tuple(SENSITIVE_DEFAULT)
     hold_labels: tuple[str, ...] = ("hold", "do-not-merge", "needs-human")
+    required_checks: tuple[str, ...] = ()  # check runs that must exist and pass, e.g. "review / verdict"
 
 
 @dataclass
@@ -173,6 +174,10 @@ def decide(facts: Facts, policy: Policy) -> Decision:
             block.append(f"status `{s['context']}` {s['state']}")
         elif s["state"] == "pending":
             wait.append(f"status `{s['context']}` is pending")
+    reported = {c["name"] for c in facts.checks}
+    for name in policy.required_checks:
+        if name not in reported:
+            wait.append(f"required check `{name}` has not reported yet")
     if not facts.checks and not facts.statuses:
         wait.append("no checks reported on the head commit yet")
 
@@ -294,6 +299,7 @@ def main(argv=None) -> int:
     ap.add_argument("--max-files", type=int, default=100)
     ap.add_argument("--max-lines", type=int, default=3000)
     ap.add_argument("--extra-sensitive", default="", help="space or comma separated path globs")
+    ap.add_argument("--required-checks", default="", help="comma separated check names that must report and pass")
     ap.add_argument("--target-url", default="")
     args = ap.parse_args(argv)
 
@@ -301,6 +307,7 @@ def main(argv=None) -> int:
     policy = Policy(
         trusted_authors=tuple(a for a in re.split(r"[\s,]+", args.trusted_authors) if a),
         max_files=args.max_files, max_lines=args.max_lines, sensitive=tuple(SENSITIVE_DEFAULT) + extra,
+        required_checks=tuple(c.strip() for c in args.required_checks.split(",") if c.strip()),
     )
     deadline = time.monotonic() + min(args.wait_minutes, 20) * 60
     set_status(args.repo, args.sha, "pending", "evaluating", args.target_url)

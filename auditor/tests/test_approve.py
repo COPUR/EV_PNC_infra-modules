@@ -66,6 +66,14 @@ class Decide(unittest.TestCase):
     def test_no_checks_yet_waits(self):
         self.assertEqual(self.verdict(checks=[]).verdict, "wait")
 
+    def test_required_check_must_report_and_pass(self):
+        policy = approve.Policy(required_checks=("review / verdict",))
+        self.assertEqual(approve.decide(facts(), policy).verdict, "wait")
+        passed = GREEN + [{"name": "review / verdict", "status": "completed", "conclusion": "success"}]
+        self.assertEqual(approve.decide(facts(checks=passed), policy).verdict, "approve")
+        failed = GREEN + [{"name": "review / verdict", "status": "completed", "conclusion": "failure"}]
+        self.assertEqual(approve.decide(facts(checks=failed), policy).verdict, "block")
+
     def test_skipped_and_neutral_checks_are_fine(self):
         extra = GREEN + [{"name": "approve", "status": "completed", "conclusion": "skipped"},
                          {"name": "n", "status": "completed", "conclusion": "neutral"}]
