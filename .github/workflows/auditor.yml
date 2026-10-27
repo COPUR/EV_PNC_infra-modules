@@ -1,0 +1,40 @@
+name: auditor
+
+# This repository audits itself with the local copy of the reusable workflow, and runs the
+# auditor's own tests.
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    uses: ./.github/workflows/ci-auditor.yml
+    with:
+      auditor-ref: ${{ github.sha }}
+
+  tests:
+    name: auditor tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+          cache: false
+      - name: Install gitleaks
+        run: |
+          GOBIN="$RUNNER_TEMP/bin" go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          echo "GITLEAKS_BIN=$RUNNER_TEMP/bin/gitleaks" >> "$GITHUB_ENV"
+      - name: audit.py unit tests
+        run: python3 -m unittest discover -s auditor/tests -v
+      - name: gitleaks project rules
+        run: bash auditor/tests/test_gitleaks_rules.sh
