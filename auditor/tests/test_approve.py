@@ -74,6 +74,15 @@ class Decide(unittest.TestCase):
         failed = GREEN + [{"name": "review / verdict", "status": "completed", "conclusion": "failure"}]
         self.assertEqual(approve.decide(facts(checks=failed), policy).verdict, "block")
 
+    def test_only_the_latest_run_of_a_check_counts(self):
+        policy = approve.Policy(required_checks=("review / verdict",))
+        cancelled = {"id": 1, "name": "review / verdict", "status": "completed", "conclusion": "cancelled"}
+        passed = {"id": 2, "name": "review / verdict", "status": "completed", "conclusion": "success"}
+        self.assertEqual(approve.decide(facts(checks=GREEN + [cancelled, passed]), policy).verdict, "approve")
+        self.assertEqual(approve.decide(facts(checks=GREEN + [passed, cancelled]), policy).verdict, "approve")
+        failed_rerun = dict(passed, id=3, conclusion="failure")
+        self.assertEqual(approve.decide(facts(checks=GREEN + [passed, failed_rerun]), policy).verdict, "block")
+
     def test_skipped_and_neutral_checks_are_fine(self):
         extra = GREEN + [{"name": "approve", "status": "completed", "conclusion": "skipped"},
                          {"name": "n", "status": "completed", "conclusion": "neutral"}]

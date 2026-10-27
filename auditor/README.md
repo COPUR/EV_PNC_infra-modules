@@ -32,7 +32,7 @@ and, on approve, merges with the chosen method (`squash` by default), pinned to 
 | approve | success, then merge | all checks green; no sensitive path; within size limits; trusted author; no open review thread |
 | wait | pending | other checks still running; the job polls up to `wait-minutes` (max 20), then holds |
 | hold | pending | a human must look: draft, stacked PR (base is not the default branch), fork, label `hold` / `do-not-merge` / `needs-human`, touches a sensitive path, more than 100 files or 3000 lines, a diff too large to inspect, deletes or disables a test, unresolved review thread |
-| block | failure (job red) | a failed check or status, merge conflict, changes requested, conflict marker or private key in the diff |
+| block | failure (job red) | a failed check (the latest run of each check counts, so an older cancelled or re-run attempt does not) or status, merge conflict, changes requested, conflict marker or private key in the diff |
 
 Sensitive paths (always a human): `.github/workflows/*`, `.github/actions/*`, `CODEOWNERS`, `.github/dependabot.yml`,
 `.gitleaks.toml`, `.auditor-allow`, `auditor/*`, `*.tf`, `*.tfvars`, `*Dockerfile*`, plus the caller's `extra-sensitive-paths`.

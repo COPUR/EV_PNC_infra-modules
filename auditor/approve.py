@@ -160,7 +160,7 @@ def decide(facts: Facts, policy: Policy) -> Decision:
     elif facts.mergeable_state == "unknown":
         wait.append("GitHub has not computed mergeability yet")
 
-    for c in facts.checks:
+    for c in latest_check_runs(facts.checks):
         if c.get("status") != "completed":
             wait.append(f"check `{c['name']}` is {c.get('status')}")
         elif c.get("conclusion") == "action_required":
@@ -215,6 +215,17 @@ def parse_stream(text: str) -> list:
 PER_COMMIT_REVIEWERS = {"github-actions[bot]"}
 
 
+def latest_check_runs(runs: list[dict]) -> list[dict]:
+    """Keep the newest run (highest id) of each check name: a re-run or a run cancelled by a newer
+    event leaves an older run on the same commit, and only the latest one is the check's result."""
+    latest: dict[str, dict] = {}
+    for c in runs:
+        prev = latest.get(c["name"])
+        if prev is None or c.get("id", 0) > prev.get("id", 0):
+            latest[c["name"]] = c
+    return list(latest.values())
+
+
 def latest_review_states(reviews: list[dict], head_sha: str = "") -> dict[str, str]:
     states: dict[str, str] = {}
     for r in sorted(reviews, key=lambda r: r.get("submitted_at") or ""):
@@ -239,7 +250,7 @@ def gather(repo: str, pr: int, run_id: str) -> Facts:
     reviews = parse_stream(gh("api", "--paginate", f"repos/{repo}/pulls/{pr}/reviews?per_page=100",
                               "--jq", ".[] | {user:{login:.user.login},state,submitted_at,commit_id}"))
     runs = parse_stream(gh("api", "--paginate", f"repos/{repo}/commits/{sha}/check-runs?per_page=100",
-                           "--jq", ".check_runs[] | {name,status,conclusion,details_url}"))
+                           "--jq", ".check_runs[] | {id,name,status,conclusion,details_url}"))
     # The approver's own job is still running while it decides; ignore unfinished checks of this run.
     own = f"/actions/runs/{run_id}/" if run_id else None
     checks = [c for c in runs if not (own and own in (c.get("details_url") or "") and c["status"] != "completed")]
