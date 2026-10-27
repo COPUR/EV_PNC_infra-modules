@@ -210,11 +210,18 @@ def parse_stream(text: str) -> list:
     return out
 
 
-def latest_review_states(reviews: list[dict]) -> dict[str, str]:
+# Bots that review every head commit afresh (the CI review agent). Their verdict on an older commit is
+# stale: a new push gets a new review, so only a review of the current head counts.
+PER_COMMIT_REVIEWERS = {"github-actions[bot]"}
+
+
+def latest_review_states(reviews: list[dict], head_sha: str = "") -> dict[str, str]:
     states: dict[str, str] = {}
     for r in sorted(reviews, key=lambda r: r.get("submitted_at") or ""):
         user = (r.get("user") or {}).get("login", "?")
         state = r.get("state", "")
+        if head_sha and user in PER_COMMIT_REVIEWERS and r.get("commit_id") != head_sha:
+            continue
         if state == "DISMISSED":
             states.pop(user, None)
         elif state in ("APPROVED", "CHANGES_REQUESTED"):
@@ -230,7 +237,7 @@ def gather(repo: str, pr: int, run_id: str) -> Facts:
     files = parse_stream(gh("api", "--paginate", f"repos/{repo}/pulls/{pr}/files?per_page=100",
                             "--jq", ".[] | {filename,status,additions,deletions,patch}"))
     reviews = parse_stream(gh("api", "--paginate", f"repos/{repo}/pulls/{pr}/reviews?per_page=100",
-                              "--jq", ".[] | {user:{login:.user.login},state,submitted_at}"))
+                              "--jq", ".[] | {user:{login:.user.login},state,submitted_at,commit_id}"))
     runs = parse_stream(gh("api", "--paginate", f"repos/{repo}/commits/{sha}/check-runs?per_page=100",
                            "--jq", ".check_runs[] | {name,status,conclusion,details_url}"))
     # The approver's own job is still running while it decides; ignore unfinished checks of this run.
@@ -246,7 +253,7 @@ def gather(repo: str, pr: int, run_id: str) -> Facts:
         base_ref=p["base"]["ref"], default_branch=repo_meta["default_branch"],
         head_repo=(p["head"].get("repo") or {}).get("full_name", ""), base_repo=p["base"]["repo"]["full_name"],
         author=p["user"]["login"], labels=[l["name"] for l in p.get("labels", [])],
-        files=files, review_states=latest_review_states(reviews),
+        files=files, review_states=latest_review_states(reviews, sha),
         unresolved_threads=sum(1 for t in threads if not t["isResolved"] and not t["isOutdated"]),
         mergeable_state=p.get("mergeable_state", "unknown"), checks=checks, statuses=statuses,
     )

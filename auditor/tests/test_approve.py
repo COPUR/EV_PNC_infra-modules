@@ -145,6 +145,17 @@ class Helpers(unittest.TestCase):
         ]
         self.assertEqual(approve.latest_review_states(reviews), {"a": "APPROVED"})
 
+    def test_ci_reviewer_verdict_counts_only_on_the_head_commit(self):
+        bot = {"login": "github-actions[bot]"}
+        reviews = [
+            {"user": bot, "state": "CHANGES_REQUESTED", "submitted_at": "2026-01-01T00:00:00Z", "commit_id": "old"},
+            {"user": {"login": "alice"}, "state": "CHANGES_REQUESTED", "submitted_at": "2026-01-01T00:00:00Z", "commit_id": "old"},
+        ]
+        # the bot's verdict on an old commit is stale; a human's stays until they change it
+        self.assertEqual(approve.latest_review_states(reviews, "new"), {"alice": "CHANGES_REQUESTED"})
+        reviews.append({"user": bot, "state": "CHANGES_REQUESTED", "submitted_at": "2026-01-02T00:00:00Z", "commit_id": "new"})
+        self.assertEqual(approve.latest_review_states(reviews, "new")["github-actions[bot]"], "CHANGES_REQUESTED")
+
 
 if __name__ == "__main__":
     unittest.main()
