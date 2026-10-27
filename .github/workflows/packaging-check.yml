@@ -1,0 +1,65 @@
+name: packaging-check
+
+# Reusable packaging gate for the EV_PNC and EV_PnC_Consent repositories (card M-02).
+# Callers: see packaging/templates/packaging-caller.yml. Docs: packaging/README.md.
+on:
+  workflow_call:
+    inputs:
+      repo-name:
+        description: Repository name as written in components.csv (default - the calling repository's name)
+        type: string
+        default: ""
+      model-repo:
+        description: Also enforce the model rules (version bump and ADR); set it only in EV_PNC_ocpi-model
+        type: boolean
+        default: false
+      auditor-ref:
+        description: Ref of COPUR/EV_PNC_infra-modules that holds the scripts and components.csv; callers pass the same SHA they pin in `uses:`
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  packaging:
+    name: packaging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository (full history, for the model rule's diff)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the packaging scripts and components.csv
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: COPUR/EV_PNC_infra-modules
+          ref: ${{ inputs.auditor-ref }}
+          path: .auditor-src
+          persist-credentials: false
+
+      - name: Component graph (no cycles, stable dependencies, abstractness)
+        run: python3 .auditor-src/packaging/packaging_check.py .auditor-src/packaging/components.csv --strict
+
+      - name: Declared dependencies
+        env:
+          REPO_NAME: ${{ inputs.repo-name != '' && inputs.repo-name || github.event.repository.name }}
+        run: python3 .auditor-src/packaging/change_rules.py deps --components .auditor-src/packaging/components.csv --repo "$REPO_NAME" --root .
+
+      - name: Check out the ADRs
+        if: ${{ inputs.model-repo && github.event_name == 'pull_request' }}
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: COPUR/EV_PNC_docs
+          sparse-checkout: docs/adr
+          path: .adr-src
+          persist-credentials: false
+
+      - name: Model change needs a semver bump and an ADR
+        if: ${{ inputs.model-repo && github.event_name == 'pull_request' }}
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 .auditor-src/packaging/change_rules.py model --base "$PR_BASE" --root . --adr-dir .adr-src/docs/adr

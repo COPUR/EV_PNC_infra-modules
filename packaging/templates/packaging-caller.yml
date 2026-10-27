@@ -1,0 +1,20 @@
+name: packaging
+
+# Calls the shared packaging gate in COPUR/EV_PNC_infra-modules: the component graph check
+# (packaging_check.py --strict) and the rule that every cross-repo dependency is declared in
+# components.csv. In EV_PNC_ocpi-model also set `model-repo: true`.
+# Pin both refs to the same commit of EV_PNC_infra-modules. Docs: packaging/README.md there.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  packaging:
+    uses: COPUR/EV_PNC_infra-modules/.github/workflows/packaging-check.yml@<commit-sha> # EV_PNC_infra-modules
+    with:
+      auditor-ref: <commit-sha> # same commit as above; selects the scripts and components.csv the workflow uses
+      # model-repo: true        # EV_PNC_ocpi-model only

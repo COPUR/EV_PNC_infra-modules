@@ -1,0 +1,34 @@
+component,repo,kind,abstractness,depends_on
+hub-contracts,EV_PNC_hub-contracts,specs and pinned vendor contracts,1.00,
+ocpi-model,EV_PNC_ocpi-model,canonical model and events,0.85,
+ocpi-emsp-server,EV_PNC_ocpi-emsp,deployable,0.05,ocpi-model;policy-api;consent-contracts
+policy-api,EV_PNC_policy-engine,api,1.00,ocpi-model
+policy-server,EV_PNC_policy-engine,deployable,0.05,policy-api;pricing-api;ocpi-model
+pricing-api,EV_PNC_pricing,api,1.00,ocpi-model
+pricing-server,EV_PNC_pricing,deployable,0.05,pricing-api;ocpi-model
+payments-api,EV_PNC_payments,api,1.00,ocpi-model
+payments-server,EV_PNC_payments,deployable,0.05,payments-api;pricing-api;ocpi-model
+plugcharge-api,EV_PNC_plugcharge,api,1.00,ocpi-model
+plugcharge-server,EV_PNC_plugcharge,deployable,0.05,plugcharge-api;ocpi-model;consent-contracts
+telemetry-api,EV_PNC_telemetry,api,1.00,ocpi-model
+telemetry-server,EV_PNC_telemetry,deployable,0.05,telemetry-api;ocpi-model
+planner-api,EV_PNC_planner,api,1.00,ocpi-model
+planner-server,EV_PNC_planner,deployable,0.05,planner-api;telemetry-api;pricing-api;policy-api;ocpi-model
+hub-core,EV_PNC_hub-gateway,library,0.30,ocpi-model;hub-contracts
+hub-hubject,EV_PNC_hub-gateway,deployable,0.05,hub-core;ocpi-model;hub-contracts;policy-api;plugcharge-api;consent-contracts
+hub-gireve,EV_PNC_hub-gateway,deployable,0.05,hub-core;ocpi-model;hub-contracts;policy-api;plugcharge-api;consent-contracts
+hub-echx,EV_PNC_hub-gateway,deployable,0.05,hub-core;ocpi-model;hub-contracts;policy-api;consent-contracts
+simulator,EV_PNC_simulator,test tooling,0.05,ocpi-model;hub-contracts
+pilot-analytics,EV_PNC_pilot-analytics,batch jobs and dashboards,0.02,ocpi-model;telemetry-api;planner-api;payments-api;pricing-api
+edge-api,EV_PNC_api-gateway,api,1.00,
+api-gateway-server,EV_PNC_api-gateway,deployable,0.05,edge-api;planner-api;policy-api;payments-api;plugcharge-api;telemetry-api;pricing-api;consent-contracts
+mobile-ios,EV_PNC_mobile,app,0.05,edge-api
+mobile-android,EV_PNC_mobile,app,0.05,edge-api
+consent-contracts,EV_PnC_Consent_contracts,api (external family),0.90,
+consent-edevlet-bridge,EV_PnC_Consent_edevlet-bridge,deployable (external family),0.05,consent-contracts;mcs-contracts
+consent-testkit,EV_PnC_Consent_testkit,test tooling (external family),0.02,consent-contracts
+data-contracts,EV_PNC_national-data,api (C1 data access point and C2 ID registry),1.00,
+trust-contracts,EV_PNC_national-data,api (C4 recipient registry and onboarding),1.00,
+data-reference,EV_PNC_national-data,reference implementation C1 C2 C4,0.10,data-contracts;trust-contracts
+mcs-contracts,EV_PNC_national-consent,api (C3 scopes and assertions),1.00,
+mcs-reference,EV_PNC_national-consent,reference implementation C3 and mock,0.10,mcs-contracts;trust-contracts
