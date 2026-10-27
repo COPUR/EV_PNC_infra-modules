@@ -1,0 +1,27 @@
+name: reviewer-tests
+
+on:
+  push:
+    branches: [main]
+    paths: ["reviewer/**", ".github/workflows/ci-reviewer.yml", ".github/workflows/reviewer-tests.yml"]
+  pull_request:
+    paths: ["reviewer/**", ".github/workflows/ci-reviewer.yml", ".github/workflows/reviewer-tests.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Unit tests
+        run: python3 -m unittest discover -s reviewer/tests -v
+      - name: Requirements install with hashes
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes -r reviewer/requirements.txt
+          "$RUNNER_TEMP/venv/bin/python" -c "import anthropic; print(anthropic.__version__)"

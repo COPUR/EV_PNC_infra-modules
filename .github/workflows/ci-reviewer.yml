@@ -1,0 +1,87 @@
+name: ci-reviewer
+
+# Reusable CI review agent for the EV_PNC and EV_PnC_Consent repositories.
+# Callers: reviewer/templates/review-caller.yml. Docs: reviewer/README.md.
+# The `verdict` job passes only when the reviewer approves the PR's head commit;
+# branch protection requires it, and auto-merge waits for it.
+on:
+  workflow_call:
+    inputs:
+      reviewer-ref:
+        description: Commit of COPUR/EV_PNC_infra-modules holding the reviewer script; callers pass the same SHA they pin in `uses:`
+        type: string
+        default: main
+      model:
+        description: Claude model that reviews the diff
+        type: string
+        default: claude-opus-5-5
+      effort:
+        description: Review effort (low, medium, high, xhigh, max)
+        type: string
+        default: high
+      req-id-pattern:
+        description: Regex the PR title must contain, e.g. 'RC-[0-9]+' (empty = not required)
+        type: string
+        default: ""
+      protected-paths:
+        description: Extra glob patterns (space separated) the reviewer may not approve; .github/**, CODEOWNERS, .gitleaks.toml, .auditor-allow, reviewer/** and auditor/** are always protected
+        type: string
+        default: ""
+      max-diff-chars:
+        description: Larger diffs go to a human instead of being truncated
+        type: number
+        default: 400000
+    secrets:
+      anthropic-api-key:
+        description: Anthropic API key used by the reviewer
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  verdict:
+    name: verdict
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check out the pull request (full history for the base...head diff)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the reviewer
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: COPUR/EV_PNC_infra-modules
+          ref: ${{ inputs.reviewer-ref }}
+          path: .reviewer-src
+          persist-credentials: false
+
+      - name: Install the Anthropic SDK (pinned, hash-checked)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes -r .reviewer-src/reviewer/requirements.txt
+
+      - name: Review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.anthropic-api-key }}
+          MODEL: ${{ inputs.model }}
+          EFFORT: ${{ inputs.effort }}
+          REQ_ID_PATTERN: ${{ inputs.req-id-pattern }}
+          PROTECTED_PATHS: ${{ inputs.protected-paths }}
+          MAX_DIFF_CHARS: ${{ inputs.max-diff-chars }}
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" .reviewer-src/reviewer/review.py \
+            --model "$MODEL" --effort "$EFFORT" \
+            --req-id-pattern "$REQ_ID_PATTERN" \
+            --protected-paths "$PROTECTED_PATHS" \
+            --max-diff-chars "$MAX_DIFF_CHARS"
