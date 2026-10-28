@@ -14,7 +14,8 @@
 # Usage: reviewer/setup-repos.sh [OWNER/REPO ...]
 #   No arguments: COPUR/EV_PNC_docs, COPUR/EV_PNC_infra-modules and every COPUR/EV_PnC_Consent_* repo.
 # Options (environment):
-#   ANTHROPIC_API_KEY=...  use this key instead of prompting
+#   ANTHROPIC_API_KEY=...  use this key instead of prompting. Either way the key is checked against the
+#                          Anthropic API (GET /v1/models) before anything is written; a rejected key is asked again (3 tries)
 #   SKIP_SECRET=1          leave the secret as it is
 #   SKIP_PROTECTION=1      do not touch branch protection
 #   DRY_RUN=1              print what would change, change nothing
@@ -46,12 +47,37 @@ echo "repositories:"; printf '  %s\n' "${repos[@]}"
 
 run() { if [ -n "${DRY_RUN:-}" ]; then echo "  [dry-run] $*"; else "$@"; fi; }
 
+# check_key KEY : ask the Anthropic API (GET /v1/models, no tokens spent) whether the key is accepted.
+# The key goes to curl on stdin as a config file, never on a command line. Prints ok, invalid or unreachable.
+check_key() {
+  local code
+  code=$(printf 'header = "x-api-key: %s"\n' "$1" |
+    curl -s -o /dev/null -w '%{http_code}' --max-time 20 -K - \
+      -H "anthropic-version: 2023-06-01" https://api.anthropic.com/v1/models 2>/dev/null) || code=000
+  case "$code" in 200) echo ok;; 401|403) echo invalid;; *) echo "unreachable ($code)";; esac
+}
+
 if [ -z "${SKIP_SECRET:-}" ] && [ -z "${DRY_RUN:-}" ]; then
   key="${ANTHROPIC_API_KEY:-}"
-  if [ -z "$key" ]; then
-    read -r -s -p "ANTHROPIC_API_KEY (input hidden): " key; echo
-  fi
-  [ -n "$key" ] || { echo "empty key" >&2; exit 1; }
+  attempt=0
+  while :; do
+    if [ -z "$key" ]; then
+      attempt=$((attempt + 1))
+      [ "$attempt" -le 3 ] || { echo "no valid key after 3 tries; nothing was changed" >&2; exit 1; }
+      read -r -s -p "ANTHROPIC_API_KEY (input hidden): " key; echo
+    fi
+    key="$(printf '%s' "$key" | tr -d '[:space:]')" # a pasted key often carries a newline or spaces
+    if [ -z "$key" ]; then echo "  empty key, try again" >&2; continue; fi
+    case "$key" in sk-ant-*) ;; *) echo "  note: the key does not start with sk-ant-" >&2;; esac
+    result="$(check_key "$key")"
+    case "$result" in
+      ok) echo "  key accepted by the Anthropic API"; break;;
+      invalid) echo "  the Anthropic API rejected this key (401/403), try again" >&2; key="";;
+      *) echo "  could not verify the key: $result" >&2
+         read -r -p "  use it without verification? [y/N] " yn
+         case "$yn" in y|Y|yes|YES) break;; *) key="";; esac;;
+    esac
+  done
 fi
 
 on_main() { gh api "repos/$1/contents/$2?ref=main" --silent >/dev/null 2>&1; }
