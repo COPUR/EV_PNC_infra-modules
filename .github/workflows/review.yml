@@ -1,0 +1,25 @@
+name: review
+
+# CI review agent: reviews every PR and approves or requests changes. Branch protection
+# requires the `review / verdict` check, so nothing merges without its approval.
+# Logic lives in COPUR/EV_PNC_infra-modules (reviewer/README.md there).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    uses: COPUR/EV_PNC_infra-modules/.github/workflows/ci-reviewer.yml@75c0a6eb365256c6f0f5100aba669653cb9f5db1 # EV_PNC_infra-modules
+    with:
+      reviewer-ref: 75c0a6eb365256c6f0f5100aba669653cb9f5db1 # same commit as above; selects the reviewer script
+      req-id-pattern: "" # infra-modules: no requirement ID in titles
+    secrets:
+      anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
