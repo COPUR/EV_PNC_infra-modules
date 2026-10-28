@@ -53,14 +53,18 @@ non-fork, non-archived `EV_PNC_*` and `EV_PnC_Consent_*` repository of `$OWNER` 
 
 ```
 DRY_RUN=1 bash auditor/setup-repos.sh    # prints every change and its payload; changes nothing
-bash auditor/setup-repos.sh              # applies
+bash auditor/setup-repos.sh              # asks "Continue? [y/N]", then applies (YES=1 skips the question)
 ```
+
+Both end with one table, headed `Plan (nothing was changed):` or `Result:`, with a row per repository (settings, labels,
+protection, open PRs without the audit checks). Without a terminal and without `YES=1` a real run refuses.
 
 | Step | What it does |
 |---|---|
 | settings | allows squash merge (the approver merges with it); sets the default workflow token to read (callers grant their own job permissions). Does **not** tick "Allow GitHub Actions to create and approve pull requests": these gates do not approve reviews. |
 | labels | creates `hold`, `do-not-merge`, `needs-human`, which the approver honours |
 | protection | only where `.github/workflows/auditor.yml` is already on the default branch: requires `audit / gitleaks` and `audit / repository audit` (pinned to GitHub Actions, app 15368), the `ci-approver` commit status (any source: the API gives statuses no app id) and, where its caller is on the branch, `review / verdict`. The job check `approve / ci-approver` is never required: it passes even when the verdict is hold. |
+| stale PRs | lists open same-repo PRs whose head has no `audit / gitleaks` check (they predate the callers, so the required check would show as "expected" forever). `UPDATE_STALE=1` merges the base into their branches (`update-branch`); a PR that conflicts is reported for you to fix. A ready, non-sensitive PR may then merge itself once its checks pass. |
 
 Rules it keeps: no secret is read or stored; an existing protection is never replaced, only its required-check list is
 extended; a new protection has no linear-history rule (hub PRs merge with a merge commit), is not "up to date" strict
