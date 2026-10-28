@@ -17,7 +17,9 @@
 # - Required checks must come from GitHub Actions (app id 15368), not from a status anyone with write access
 #   could post.
 # DRY_RUN=1 prints the payload and changes nothing.
-set -euo pipefail
+set -Eeuo pipefail
+if [ -n "${DEBUG:-}" ]; then PS4='+ ${BASH_SOURCE##*/}:${LINENO}: '; set -x; fi
+trap 'rc=$?; echo "error: setup-merge-gate.sh line $LINENO exited $rc: $BASH_COMMAND" >&2' ERR
 
 repo="${1:?usage: $0 OWNER/REPO [extra required check ...]}"
 shift

@@ -19,10 +19,16 @@
 #   SKIP_SECRET=1          leave the secret as it is
 #   SKIP_PROTECTION=1      do not touch branch protection
 #   DRY_RUN=1              print what would change, change nothing
+#   DEBUG=1                trace every command with file:line (also passed to the helper scripts)
 #   APPROVALS=0|1          approving reviews for a new protection (default 1: the reviewer approval)
 #   YES=1, DRY_RUN=1       also apply to auditor/setup-repos.sh and setup-merge-gate.sh (inherited)
 # Needs: gh logged in as an admin of every listed repository (gh auth status).
-set -euo pipefail
+set -Eeuo pipefail
+
+# DEBUG=1 traces every command with file and line, so a failure can be located exactly.
+if [ -n "${DEBUG:-}" ]; then PS4='+ ${BASH_SOURCE##*/}:${LINENO}: '; set -x; fi
+# Any command that fails outside an `if`/`||` stops the script; say which one, where, and its exit code.
+trap 'rc=$?; echo "error: line $LINENO exited $rc: $BASH_COMMAND" >&2; echo "       (re-run with DEBUG=1 for a full trace)" >&2' ERR
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # One writer for branch protection: auditor/setup-repos.sh when it is here (it extends an existing protection
@@ -43,6 +49,21 @@ else
 fi
 [ "${#repos[@]}" -gt 0 ] || { echo "no repositories found" >&2; exit 1; }
 
+# Preflight: the usual causes of "Permission denied" and of a wrong gh identity, checked up front.
+if [ "$(id -u)" -eq 0 ]; then
+  echo "warning: running as root (sudo). gh then uses root's login, and files written here become root-owned." >&2
+  echo "         run it as your own user: bash setup-repos.sh" >&2
+fi
+for f in "$here/setup-merge-gate.sh" ${auditor_setup:+"$auditor_setup"}; do
+  if [ ! -r "$f" ]; then
+    echo "error: cannot read $f" >&2
+    echo "       fix: chmod u+r '$f'   (macOS download: xattr -d com.apple.quarantine '$f')" >&2
+    exit 1
+  fi
+done
+command -v curl >/dev/null 2>&1 || { echo "error: curl is not installed" >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "error: gh is not logged in as this user; run: gh auth login" >&2; exit 1; }
+
 echo "repositories:"; printf '  %s\n' "${repos[@]}"
 
 run() { if [ -n "${DRY_RUN:-}" ]; then echo "  [dry-run] $*"; else "$@"; fi; }
@@ -57,7 +78,12 @@ check_key() {
   case "$code" in 200) echo ok;; 401|403) echo invalid;; *) echo "unreachable ($code)";; esac
 }
 
+# The trace must never print the key: tracing is off while the key is read, checked and written.
+untrace() { { set +x; } 2>/dev/null; }
+retrace() { if [ -n "${DEBUG:-}" ]; then set -x; fi; }
+
 if [ -z "${SKIP_SECRET:-}" ] && [ -z "${DRY_RUN:-}" ]; then
+  untrace
   key="${ANTHROPIC_API_KEY:-}"
   attempt=0
   while :; do
@@ -78,6 +104,7 @@ if [ -z "${SKIP_SECRET:-}" ] && [ -z "${DRY_RUN:-}" ]; then
          case "$yn" in y|Y|yes|YES) break;; *) key="";; esac;;
     esac
   done
+  retrace
 fi
 
 on_main() { gh api "repos/$1/contents/$2?ref=main" --silent >/dev/null 2>&1; }
@@ -91,7 +118,11 @@ for repo in "${repos[@]}"; do
 
   if [ -z "${SKIP_SECRET:-}" ]; then
     if [ -n "${DRY_RUN:-}" ]; then echo "  [dry-run] gh secret set ANTHROPIC_API_KEY --repo $repo"
-    else printf '%s' "$key" | gh secret set ANTHROPIC_API_KEY --repo "$repo" && echo "  secret ANTHROPIC_API_KEY set"; fi
+    else
+      untrace
+      printf '%s' "$key" | gh secret set ANTHROPIC_API_KEY --repo "$repo" && echo "  secret ANTHROPIC_API_KEY set"
+      retrace
+    fi
   fi
 
   run gh api -X PUT "repos/$repo/actions/permissions/workflow" \
@@ -105,7 +136,8 @@ for repo in "${repos[@]}"; do
   elif on_main "$repo" .github/workflows/review.yml; then
     extra=()
     if on_main "$repo" .github/workflows/auditor.yml; then extra=("audit / gitleaks" "audit / repository audit"); fi
-    APPROVALS="${APPROVALS:-1}" bash "$here/setup-merge-gate.sh" "$repo" ${extra[@]+"${extra[@]}"}
+    APPROVALS="${APPROVALS:-1}" bash "$here/setup-merge-gate.sh" "$repo" ${extra[@]+"${extra[@]}"} ||
+      { echo "  setup-merge-gate.sh failed for $repo (exit $?)" >&2; failed+=("$repo"); }
   else
     echo "  no .github/workflows/review.yml on main yet: branch protection skipped; merge the caller PR, then re-run"
   fi
@@ -114,7 +146,8 @@ done
 unset key
 if [ -z "${SKIP_PROTECTION:-}" ] && [ -n "$auditor_setup" ]; then
   echo "== branch protection: auditor/setup-repos.sh (adds review / verdict where review.yml is on main)"
-  APPROVALS="${APPROVALS:-1}" bash "$auditor_setup" "${repos[@]}" || failed+=("branch protection")
+  APPROVALS="${APPROVALS:-1}" bash "$auditor_setup" "${repos[@]}" ||
+    { echo "  auditor/setup-repos.sh failed (exit $?)" >&2; failed+=("branch protection"); }
 fi
 if [ "${#failed[@]}" -gt 0 ]; then echo "not set up: ${failed[*]}" >&2; exit 1; fi
 echo "done"
