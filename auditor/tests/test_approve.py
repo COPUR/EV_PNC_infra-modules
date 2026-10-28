@@ -1,6 +1,8 @@
 import os
+import subprocess
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import approve  # noqa: E402
@@ -136,6 +138,40 @@ class Helpers(unittest.TestCase):
             {"user": {"login": "c"}, "state": "COMMENTED", "submitted_at": "2026-01-01T00:00:00Z"},
         ]
         self.assertEqual(approve.latest_review_states(reviews), {"a": "APPROVED"})
+
+
+def fake_run(*results):
+    """subprocess.run stand-in answering with (returncode, stdout, stderr) in turn."""
+    calls = iter(results)
+    return lambda *a, **k: subprocess.CompletedProcess(a[0], *next(calls))
+
+
+class Merge(unittest.TestCase):
+    def merge(self, *results, **kw):
+        runner = mock.Mock(side_effect=fake_run(*results))
+        with mock.patch.object(approve.subprocess, "run", runner), mock.patch.object(approve.time, "sleep") as sleep:
+            outcome = approve.merge("COPUR/x", 1, "abc", "squash", **kw)
+        return outcome, runner.call_count, sleep.call_count
+
+    def test_merges_first_time(self):
+        self.assertEqual(self.merge((0, '{"sha": "m1"}', "")), ((True, "m1"), 1, 0))
+
+    def test_retries_405_until_github_counts_the_status(self):
+        refused = (1, '{"message":"Required status check ci-approver is expected."}', "gh: ... (HTTP 405)")
+        self.assertEqual(self.merge(refused, refused, (0, '{"sha": "m2"}', "")), ((True, "m2"), 3, 2))
+
+    def test_gives_up_after_the_attempts(self):
+        refused = (1, '{"message":"not mergeable"}', "gh: ... (HTTP 405)")
+        (ok, info), calls, sleeps = self.merge(*[refused] * 3, attempts=3)
+        self.assertFalse(ok)
+        self.assertEqual((calls, sleeps), (3, 2))
+        self.assertIn("not mergeable", info)
+
+    def test_other_refusals_are_final(self):
+        for code in ("409", "422", "403"):
+            with self.subTest(code=code):
+                (ok, _), calls, sleeps = self.merge((1, "{}", f"gh: ... (HTTP {code})"))
+                self.assertEqual((ok, calls, sleeps), (False, 1, 0))
 
 
 if __name__ == "__main__":
