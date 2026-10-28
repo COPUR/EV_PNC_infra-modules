@@ -9,6 +9,10 @@ The reviewer runs under the GitHub Actions identity, never as the PR author, so 
 change (separation of duties). Claude, which writes most PRs here, only turns on auto-merge; it never merges past
 the gate.
 
+Repositories that also run the auditor caller get the merge from its `ci-approver` job, which waits for
+`review / verdict` (input `required-checks`) and merges when everything is green. Without it, Claude enables GitHub
+auto-merge, which waits for the same gate.
+
 ## How a PR is judged
 
 The first gate that fails decides; the cheap ones run before any model call.

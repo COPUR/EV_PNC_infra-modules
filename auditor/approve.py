@@ -52,6 +52,7 @@ class Policy:
     max_lines: int = 3000
     sensitive: tuple[str, ...] = tuple(SENSITIVE_DEFAULT)
     hold_labels: tuple[str, ...] = ("hold", "do-not-merge", "needs-human")
+    required_checks: tuple[str, ...] = ()  # check runs that must exist and pass, e.g. "review / verdict"
 
 
 @dataclass
@@ -159,7 +160,7 @@ def decide(facts: Facts, policy: Policy) -> Decision:
     elif facts.mergeable_state == "unknown":
         wait.append("GitHub has not computed mergeability yet")
 
-    for c in facts.checks:
+    for c in latest_check_runs(facts.checks):
         if c.get("status") != "completed":
             wait.append(f"check `{c['name']}` is {c.get('status')}")
         elif c.get("conclusion") == "action_required":
@@ -173,6 +174,10 @@ def decide(facts: Facts, policy: Policy) -> Decision:
             block.append(f"status `{s['context']}` {s['state']}")
         elif s["state"] == "pending":
             wait.append(f"status `{s['context']}` is pending")
+    reported = {c["name"] for c in facts.checks}
+    for name in policy.required_checks:
+        if name not in reported:
+            wait.append(f"required check `{name}` has not reported yet")
     if not facts.checks and not facts.statuses:
         wait.append("no checks reported on the head commit yet")
 
@@ -205,11 +210,29 @@ def parse_stream(text: str) -> list:
     return out
 
 
-def latest_review_states(reviews: list[dict]) -> dict[str, str]:
+# Bots that review every head commit afresh (the CI review agent). Their verdict on an older commit is
+# stale: a new push gets a new review, so only a review of the current head counts.
+PER_COMMIT_REVIEWERS = {"github-actions[bot]"}
+
+
+def latest_check_runs(runs: list[dict]) -> list[dict]:
+    """Keep the newest run (highest id) of each check name: a re-run or a run cancelled by a newer
+    event leaves an older run on the same commit, and only the latest one is the check's result."""
+    latest: dict[str, dict] = {}
+    for c in runs:
+        prev = latest.get(c["name"])
+        if prev is None or c.get("id", 0) > prev.get("id", 0):
+            latest[c["name"]] = c
+    return list(latest.values())
+
+
+def latest_review_states(reviews: list[dict], head_sha: str = "") -> dict[str, str]:
     states: dict[str, str] = {}
     for r in sorted(reviews, key=lambda r: r.get("submitted_at") or ""):
         user = (r.get("user") or {}).get("login", "?")
         state = r.get("state", "")
+        if head_sha and user in PER_COMMIT_REVIEWERS and r.get("commit_id") != head_sha:
+            continue
         if state == "DISMISSED":
             states.pop(user, None)
         elif state in ("APPROVED", "CHANGES_REQUESTED"):
@@ -225,9 +248,9 @@ def gather(repo: str, pr: int, run_id: str) -> Facts:
     files = parse_stream(gh("api", "--paginate", f"repos/{repo}/pulls/{pr}/files?per_page=100",
                             "--jq", ".[] | {filename,status,additions,deletions,patch}"))
     reviews = parse_stream(gh("api", "--paginate", f"repos/{repo}/pulls/{pr}/reviews?per_page=100",
-                              "--jq", ".[] | {user:{login:.user.login},state,submitted_at}"))
+                              "--jq", ".[] | {user:{login:.user.login},state,submitted_at,commit_id}"))
     runs = parse_stream(gh("api", "--paginate", f"repos/{repo}/commits/{sha}/check-runs?per_page=100",
-                           "--jq", ".check_runs[] | {name,status,conclusion,details_url}"))
+                           "--jq", ".check_runs[] | {id,name,status,conclusion,details_url}"))
     # The approver's own job is still running while it decides; ignore unfinished checks of this run.
     own = f"/actions/runs/{run_id}/" if run_id else None
     checks = [c for c in runs if not (own and own in (c.get("details_url") or "") and c["status"] != "completed")]
@@ -241,7 +264,7 @@ def gather(repo: str, pr: int, run_id: str) -> Facts:
         base_ref=p["base"]["ref"], default_branch=repo_meta["default_branch"],
         head_repo=(p["head"].get("repo") or {}).get("full_name", ""), base_repo=p["base"]["repo"]["full_name"],
         author=p["user"]["login"], labels=[l["name"] for l in p.get("labels", [])],
-        files=files, review_states=latest_review_states(reviews),
+        files=files, review_states=latest_review_states(reviews, sha),
         unresolved_threads=sum(1 for t in threads if not t["isResolved"] and not t["isOutdated"]),
         mergeable_state=p.get("mergeable_state", "unknown"), checks=checks, statuses=statuses,
     )
@@ -294,6 +317,7 @@ def main(argv=None) -> int:
     ap.add_argument("--max-files", type=int, default=100)
     ap.add_argument("--max-lines", type=int, default=3000)
     ap.add_argument("--extra-sensitive", default="", help="space or comma separated path globs")
+    ap.add_argument("--required-checks", default="", help="comma separated check names that must report and pass")
     ap.add_argument("--target-url", default="")
     args = ap.parse_args(argv)
 
@@ -301,6 +325,7 @@ def main(argv=None) -> int:
     policy = Policy(
         trusted_authors=tuple(a for a in re.split(r"[\s,]+", args.trusted_authors) if a),
         max_files=args.max_files, max_lines=args.max_lines, sensitive=tuple(SENSITIVE_DEFAULT) + extra,
+        required_checks=tuple(c.strip() for c in args.required_checks.split(",") if c.strip()),
     )
     deadline = time.monotonic() + min(args.wait_minutes, 20) * 60
     set_status(args.repo, args.sha, "pending", "evaluating", args.target_url)

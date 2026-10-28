@@ -66,6 +66,23 @@ class Decide(unittest.TestCase):
     def test_no_checks_yet_waits(self):
         self.assertEqual(self.verdict(checks=[]).verdict, "wait")
 
+    def test_required_check_must_report_and_pass(self):
+        policy = approve.Policy(required_checks=("review / verdict",))
+        self.assertEqual(approve.decide(facts(), policy).verdict, "wait")
+        passed = GREEN + [{"name": "review / verdict", "status": "completed", "conclusion": "success"}]
+        self.assertEqual(approve.decide(facts(checks=passed), policy).verdict, "approve")
+        failed = GREEN + [{"name": "review / verdict", "status": "completed", "conclusion": "failure"}]
+        self.assertEqual(approve.decide(facts(checks=failed), policy).verdict, "block")
+
+    def test_only_the_latest_run_of_a_check_counts(self):
+        policy = approve.Policy(required_checks=("review / verdict",))
+        cancelled = {"id": 1, "name": "review / verdict", "status": "completed", "conclusion": "cancelled"}
+        passed = {"id": 2, "name": "review / verdict", "status": "completed", "conclusion": "success"}
+        self.assertEqual(approve.decide(facts(checks=GREEN + [cancelled, passed]), policy).verdict, "approve")
+        self.assertEqual(approve.decide(facts(checks=GREEN + [passed, cancelled]), policy).verdict, "approve")
+        failed_rerun = dict(passed, id=3, conclusion="failure")
+        self.assertEqual(approve.decide(facts(checks=GREEN + [passed, failed_rerun]), policy).verdict, "block")
+
     def test_skipped_and_neutral_checks_are_fine(self):
         extra = GREEN + [{"name": "approve", "status": "completed", "conclusion": "skipped"},
                          {"name": "n", "status": "completed", "conclusion": "neutral"}]
@@ -136,6 +153,17 @@ class Helpers(unittest.TestCase):
             {"user": {"login": "c"}, "state": "COMMENTED", "submitted_at": "2026-01-01T00:00:00Z"},
         ]
         self.assertEqual(approve.latest_review_states(reviews), {"a": "APPROVED"})
+
+    def test_ci_reviewer_verdict_counts_only_on_the_head_commit(self):
+        bot = {"login": "github-actions[bot]"}
+        reviews = [
+            {"user": bot, "state": "CHANGES_REQUESTED", "submitted_at": "2026-01-01T00:00:00Z", "commit_id": "old"},
+            {"user": {"login": "alice"}, "state": "CHANGES_REQUESTED", "submitted_at": "2026-01-01T00:00:00Z", "commit_id": "old"},
+        ]
+        # the bot's verdict on an old commit is stale; a human's stays until they change it
+        self.assertEqual(approve.latest_review_states(reviews, "new"), {"alice": "CHANGES_REQUESTED"})
+        reviews.append({"user": bot, "state": "CHANGES_REQUESTED", "submitted_at": "2026-01-02T00:00:00Z", "commit_id": "new"})
+        self.assertEqual(approve.latest_review_states(reviews, "new")["github-actions[bot]"], "CHANGES_REQUESTED")
 
 
 if __name__ == "__main__":

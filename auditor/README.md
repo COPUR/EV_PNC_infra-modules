@@ -32,11 +32,16 @@ and, on approve, merges with the chosen method (`squash` by default), pinned to 
 | approve | success, then merge | all checks green; no sensitive path; within size limits; trusted author; no open review thread |
 | wait | pending | other checks still running; the job polls up to `wait-minutes` (max 20), then holds |
 | hold | pending | a human must look: draft, stacked PR (base is not the default branch), fork, label `hold` / `do-not-merge` / `needs-human`, touches a sensitive path, more than 100 files or 3000 lines, a diff too large to inspect, deletes or disables a test, unresolved review thread |
-| block | failure (job red) | a failed check or status, merge conflict, changes requested, conflict marker or private key in the diff |
+| block | failure (job red) | a failed check (the latest run of each check counts, so an older cancelled or re-run attempt does not) or status, merge conflict, changes requested, conflict marker or private key in the diff |
 
 Sensitive paths (always a human): `.github/workflows/*`, `.github/actions/*`, `CODEOWNERS`, `.github/dependabot.yml`,
 `.gitleaks.toml`, `.auditor-allow`, `auditor/*`, `*.tf`, `*.tfvars`, `*Dockerfile*`, plus the caller's `extra-sensitive-paths`.
 They are the control plane: a PR that edits CI or the secret scanner cannot approve itself.
+
+**Content review.** The approver judges metadata and patterns, not what the change says. The CI review agent
+(`reviewer/`, check `review / verdict`) reads the diff with Claude and approves or requests changes. Pass
+`required-checks: "review / verdict"` (the caller template does) so the approver waits until that check has reported and
+passed; without it, a review that has not started yet could be missed. Together: the reviewer approves, the approver merges.
 
 GitHub does not let a PR author approve their own PR, and these PRs are authored by the repository owner, so the approval is a
 status check, not a review. The caller job grants `contents: write`, `pull-requests: write`, `statuses: write`, `checks: read`.
