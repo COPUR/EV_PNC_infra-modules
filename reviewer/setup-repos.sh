@@ -27,7 +27,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # One writer for branch protection: auditor/setup-repos.sh when it is here (it extends an existing protection
 # and adds `review / verdict` itself); otherwise setup-merge-gate.sh, which also only extends.
 auditor_setup=""
-[ -x "$here/../auditor/setup-repos.sh" ] && auditor_setup="$here/../auditor/setup-repos.sh"
+[ -f "$here/../auditor/setup-repos.sh" ] && auditor_setup="$here/../auditor/setup-repos.sh"
 owner="${OWNER:-COPUR}"
 
 # Portable to the bash 3.2 that ships with macOS: no mapfile, no empty-array expansion under set -u.
@@ -79,7 +79,7 @@ for repo in "${repos[@]}"; do
   elif on_main "$repo" .github/workflows/review.yml; then
     extra=()
     if on_main "$repo" .github/workflows/auditor.yml; then extra=("audit / gitleaks" "audit / repository audit"); fi
-    APPROVALS="${APPROVALS:-1}" "$here/setup-merge-gate.sh" "$repo" ${extra[@]+"${extra[@]}"}
+    APPROVALS="${APPROVALS:-1}" bash "$here/setup-merge-gate.sh" "$repo" ${extra[@]+"${extra[@]}"}
   else
     echo "  no .github/workflows/review.yml on main yet: branch protection skipped; merge the caller PR, then re-run"
   fi
@@ -88,7 +88,7 @@ done
 unset key
 if [ -z "${SKIP_PROTECTION:-}" ] && [ -n "$auditor_setup" ]; then
   echo "== branch protection: auditor/setup-repos.sh (adds review / verdict where review.yml is on main)"
-  APPROVALS="${APPROVALS:-1}" "$auditor_setup" "${repos[@]}" || failed+=("branch protection")
+  APPROVALS="${APPROVALS:-1}" bash "$auditor_setup" "${repos[@]}" || failed+=("branch protection")
 fi
 if [ "${#failed[@]}" -gt 0 ]; then echo "not set up: ${failed[*]}" >&2; exit 1; fi
 echo "done"
