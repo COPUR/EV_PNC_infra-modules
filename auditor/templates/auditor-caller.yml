@@ -1,0 +1,35 @@
+name: auditor
+
+# Calls the shared CI auditor in COPUR/EV_PNC_infra-modules: gitleaks secret scan (project rules
+# + this repo's .gitleaks.toml) and repository / workflow hygiene checks, then the ci-approver gate,
+# which merges the pull request when every check is green and nothing needs a human.
+# See auditor/README.md there.
+on:
+  push:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "17 3 * * 1" # weekly full-history rescan
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    uses: COPUR/EV_PNC_infra-modules/.github/workflows/ci-auditor.yml@__HUB_SHA__ # EV_PNC_infra-modules
+    with:
+      public: __PUBLIC__
+      auditor-ref: __HUB_SHA__ # same commit as above; selects the scripts the workflow runs
+
+  approve:
+    needs: audit
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    permissions:
+      contents: write # merge
+      pull-requests: write # merge
+      statuses: write # publish the ci-approver verdict
+      checks: read
+    uses: COPUR/EV_PNC_infra-modules/.github/workflows/ci-approver.yml@__HUB_SHA__ # EV_PNC_infra-modules
+    with:
+      approver-ref: __HUB_SHA__ # same commit as above; selects the script the workflow runs
