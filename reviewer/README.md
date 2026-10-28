@@ -41,6 +41,11 @@ push re-runs the review; with `dismiss_stale_reviews` the old approval no longer
    protects `main`: required checks from GitHub Actions only, one approving review, stale approvals dismissed,
    branch up to date, linear history, no force pushes. Set `APPROVALS=0` if you skipped step 3.
 
+Steps 2, 3 and 5 for several repositories at once: `reviewer/setup-repos.sh [OWNER/REPO ...]` (no arguments:
+EV_PNC_docs, EV_PNC_infra-modules and every EV_PnC_Consent_* repository). It reads the key from `ANTHROPIC_API_KEY` or a
+hidden prompt and hands it to `gh secret set` on stdin, ticks the Actions approval setting, and protects `main` only
+where `review.yml` is already on `main` (re-run it after merging the caller PRs). `DRY_RUN=1` shows what it would do.
+
 ## Limits
 
 - On a personal account there are no org-level required workflows, so a PR could edit its own `review.yml`. That is
