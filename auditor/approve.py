@@ -256,14 +256,25 @@ def set_status(repo: str, sha: str, state: str, description: str, target_url: st
         print(f"::warning::could not set the {STATUS_CONTEXT} status: {exc.stderr.strip()[:200]}")
 
 
-def merge(repo: str, pr: int, sha: str, method: str) -> tuple[bool, str]:
-    proc = subprocess.run(
-        ["gh", "api", "-X", "PUT", f"repos/{repo}/pulls/{pr}/merge", "-f", f"sha={sha}", "-f", f"merge_method={method}"],
-        capture_output=True, text=True,
-    )
-    if proc.returncode == 0:
-        return True, json.loads(proc.stdout).get("sha", "")
-    return False, (proc.stdout or proc.stderr).strip()[:300]
+def merge(repo: str, pr: int, sha: str, method: str, attempts: int = 5, delay: float = 6.0) -> tuple[bool, str]:
+    """Merge the judged head commit. With branch protection on, GitHub can take a few seconds to count the
+    `ci-approver` status the approver has just set and answers 405 until then, so only 405 is retried; any
+    other refusal (409 head moved, 422, 403) is final."""
+    last = ""
+    for attempt in range(attempts):
+        proc = subprocess.run(
+            ["gh", "api", "-X", "PUT", f"repos/{repo}/pulls/{pr}/merge", "-f", f"sha={sha}", "-f", f"merge_method={method}"],
+            capture_output=True, text=True,
+        )
+        if proc.returncode == 0:
+            return True, json.loads(proc.stdout).get("sha", "")
+        out = (proc.stdout + proc.stderr).strip()
+        last = (proc.stdout or proc.stderr).strip()[:300]
+        if "405" not in out or attempt == attempts - 1:
+            break
+        print(f"merge refused (405), retrying in {delay:.0f}s ({attempt + 1}/{attempts - 1})")
+        time.sleep(delay)
+    return False, last
 
 
 def write_summary(decision: Decision, merged: str, note: str) -> None:

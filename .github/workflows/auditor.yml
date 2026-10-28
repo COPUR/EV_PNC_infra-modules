@@ -38,3 +38,7 @@ jobs:
         run: python3 -m unittest discover -s auditor/tests -v
       - name: gitleaks project rules
         run: bash auditor/tests/test_gitleaks_rules.sh
+      - name: setup-repos.sh against a stub gh
+        run: bash auditor/tests/test_setup_repos.sh
+      - name: shellcheck the setup script and its test
+        run: shellcheck -S warning -s bash auditor/setup-repos.sh auditor/tests/test_setup_repos.sh
