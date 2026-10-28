@@ -41,14 +41,19 @@ push re-runs the review; with `dismiss_stale_reviews` the old approval no longer
 3. Settings → Actions → General → Workflow permissions: tick **Allow GitHub Actions to create and approve pull
    requests**, so the reviewer's approval is a real approving review.
 4. Merge the caller PR yourself (it touches `.github/**`, so the reviewer will not approve it).
-5. Run `reviewer/setup-merge-gate.sh OWNER/REPO [other required checks]` as an admin. It allows auto-merge and
-   protects `main`: required checks from GitHub Actions only, one approving review, stale approvals dismissed,
-   branch up to date, linear history, no force pushes. Set `APPROVALS=0` if you skipped step 3.
+5. Run `reviewer/setup-merge-gate.sh OWNER/REPO [other required checks]` as an admin. It allows auto-merge and adds
+   `review / verdict` (from GitHub Actions only) to the required checks of `main`. An existing protection is never
+   replaced, only extended, so it can run before or after `auditor/setup-repos.sh`. A missing protection is created
+   with one approving review (stale approvals dismissed) and no force pushes, but without "up to date" and linear
+   history, because ci-approver neither updates branches nor always squashes. `STRICT=1` adds "up to date";
+   `APPROVALS=0` drops the review if you skipped step 3.
 
 Steps 2, 3 and 5 for several repositories at once: `reviewer/setup-repos.sh [OWNER/REPO ...]` (no arguments:
 EV_PNC_docs, EV_PNC_infra-modules and every EV_PnC_Consent_* repository). It reads the key from `ANTHROPIC_API_KEY` or a
-hidden prompt and hands it to `gh secret set` on stdin, ticks the Actions approval setting, and protects `main` only
-where `review.yml` is already on `main` (re-run it after merging the caller PRs). `DRY_RUN=1` shows what it would do.
+hidden prompt and hands it to `gh secret set` on stdin and ticks the Actions approval setting. Branch protection has
+one writer: `auditor/setup-repos.sh` when it is in the checkout (it requires the audit checks, the `ci-approver`
+status and `review / verdict` where each caller is on `main`), else `setup-merge-gate.sh`. Repositories whose callers
+are not on `main` yet are skipped; re-run after merging the caller PRs. `DRY_RUN=1` shows what it would do.
 
 ## Limits
 
