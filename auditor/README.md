@@ -46,6 +46,31 @@ and CODEOWNERS review for `.github/`. Without branch protection a collaborator c
 drop the gate; the approver only decides what merges *automatically*. Merges made with `GITHUB_TOKEN` do not start new workflow
 runs on `main`, so the checks that ran on the PR are the ones that count.
 
+## One-command repository setup: `setup-repos.sh`
+
+`auditor/setup-repos.sh` is run once by a repository admin (`gh auth login` first). With no arguments it covers every
+non-fork, non-archived `EV_PNC_*` and `EV_PnC_Consent_*` repository of `$OWNER` (default `COPUR`). Preview first:
+
+```
+DRY_RUN=1 bash auditor/setup-repos.sh    # prints every change and its payload; changes nothing
+bash auditor/setup-repos.sh              # applies
+```
+
+| Step | What it does |
+|---|---|
+| settings | allows squash merge (the approver merges with it); sets the default workflow token to read (callers grant their own job permissions). Does **not** tick "Allow GitHub Actions to create and approve pull requests": these gates do not approve reviews. |
+| labels | creates `hold`, `do-not-merge`, `needs-human`, which the approver honours |
+| protection | only where `.github/workflows/auditor.yml` is already on the default branch: requires `audit / gitleaks` and `audit / repository audit` (pinned to GitHub Actions, app 15368), the `ci-approver` commit status (any source: the API gives statuses no app id) and, where its caller is on the branch, `review / verdict`. The job check `approve / ci-approver` is never required: it passes even when the verdict is hold. |
+
+Rules it keeps: no secret is read or stored; an existing protection is never replaced, only its required-check list is
+extended; a new protection has no linear-history rule (hub PRs merge with a merge commit), is not "up to date" strict
+(the approver does not update branches; `STRICT=1` adds it) and requires no review (`APPROVALS=1` adds one, for use with
+the review agent); admins are not forced through the gate (`ENFORCE_ADMINS=1` changes that), so the owner can still merge gate-file PRs,
+which the approver always holds. Private repositories are skipped for protection until `INCLUDE_PRIVATE=1`, because
+their Actions may be blocked by billing and a required check that cannot run would freeze `main`. Run it again after
+the caller PRs merge: repositories whose caller is not on the default branch yet are skipped with a message.
+Tests: `bash auditor/tests/test_setup_repos.sh` (stub `gh`, no network).
+
 ## Adding it to a repository
 
 Copy `templates/gitleaks.toml` to `.gitleaks.toml` and `templates/auditor-caller.yml` to `.github/workflows/auditor.yml`
